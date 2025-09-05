@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>เกมทิ้งขยะให้ถูกถัง</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            body {
+                padding: 8px;
+                font-size: 14px;
+            }
+            .trash-item {
+                padding: 8px !important;
+                min-height: 80px;
+            }
+            .trash-item .text-3xl {
+                font-size: 1.5rem !important;
+            }
+            .trash-item .text-sm {
+                font-size: 0.75rem !important;
+            }
+            .bin {
+                padding: 12px !important;
+                min-height: 100px !important;
+            }
+            .bin .text-3xl {
+                font-size: 1.8rem !important;
+            }
+            .bin .text-lg {
+                font-size: 0.9rem !important;
+            }
+            .bin .text-sm {
+                font-size: 0.7rem !important;
+            }
+        }
+        
+        /* Touch-friendly interactions */
+        .trash-item {
+            touch-action: none;
+            user-select: none;
+        }
+        
+        .trash-item.touching {
+            transform: scale(1.1);
+            z-index: 1000;
+            opacity: 0.8;
+        }
+        .dragging {
+            transform: rotate(5deg);
+            z-index: 1000;
+        }
+        .bin-highlight {
+            transform: scale(1.1);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+        .correct-drop {
+            animation: bounce 0.5s ease-in-out;
+        }
+        .wrong-drop {
+            animation: shake 0.5s ease-in-out;
+        }
+        @keyframes bounce {
+            0%, 20%, 60%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+            80% { transform: translateY(-5px); }
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        .star-effect {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            animation: starSparkle 1s ease-out forwards;
+        }
+        @keyframes starSparkle {
+            0% { transform: scale(0) rotate(0deg); opacity: 1; }
+            50% { transform: scale(1.5) rotate(180deg); opacity: 1; }
+            100% { transform: scale(0) rotate(360deg); opacity: 0; }
+        }
+        .firework {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+        }
+        .firework-particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            animation: explode 1s ease-out forwards;
+        }
+        @keyframes explode {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0); opacity: 0; }
+        }
+        .error-effect {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            color: red;
+            font-size: 2rem;
+            font-weight: bold;
+            animation: errorPulse 0.8s ease-out forwards;
+        }
+        @keyframes errorPulse {
+            0% { transform: scale(0); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(0); opacity: 0; }
+        }
+        .game-over-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-100 to-green-100 min-h-screen p-4">
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-4 md:mb-8">
+            <h1 class="text-2xl md:text-4xl font-bold text-gray-800 mb-2">🗂️ เกมทิ้งขยะให้ถูกถัง</h1>
+            <p class="text-sm md:text-lg text-gray-600">ลากขยะไปทิ้งในถังที่ถูกต้อง!</p>
+            <div class="mt-4 grid grid-cols-2 md:flex md:justify-center md:items-center gap-2 md:gap-4">
+                <div class="bg-white px-2 md:px-4 py-1 md:py-2 rounded-lg shadow">
+                    <span class="text-sm md:text-lg font-semibold">คะแนน: </span>
+                    <span id="score" class="text-lg md:text-2xl font-bold text-green-600">0</span>
+                </div>
+                <div class="bg-white px-2 md:px-4 py-1 md:py-2 rounded-lg shadow">
+                    <span class="text-sm md:text-lg font-semibold">ผิด: </span>
+                    <span id="mistakes" class="text-lg md:text-2xl font-bold text-red-600">0</span>
+                </div>
+                <div class="bg-white px-2 md:px-4 py-1 md:py-2 rounded-lg shadow">
+                    <span class="text-sm md:text-lg font-semibold">ดาว: </span>
+                    <span id="stars" class="text-lg md:text-2xl font-bold text-yellow-500">0</span>
+                </div>
+                <div class="bg-white px-2 md:px-4 py-1 md:py-2 rounded-lg shadow">
+                    <span class="text-sm md:text-lg font-semibold">เวลา: </span>
+                    <span id="timer" class="text-lg md:text-2xl font-bold text-blue-600">45</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bins -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-8">
+            <div class="bin bg-blue-500 hover:bg-blue-600 transition-all duration-300 rounded-lg p-3 md:p-4 text-center text-white font-bold shadow-lg min-h-24 md:min-h-32 flex flex-col items-center justify-center" 
+                 data-type="general">
+                <div class="text-2xl md:text-3xl mb-1 md:mb-2">🗑️</div>
+                <div class="text-sm md:text-lg">ขยะทั่วไป</div>
+                <div class="text-xs md:text-sm opacity-80">(ฟ้า)</div>
+            </div>
+            <div class="bin bg-green-500 hover:bg-green-600 transition-all duration-300 rounded-lg p-3 md:p-4 text-center text-white font-bold shadow-lg min-h-24 md:min-h-32 flex flex-col items-center justify-center" 
+                 data-type="organic">
+                <div class="text-2xl md:text-3xl mb-1 md:mb-2">🥬</div>
+                <div class="text-sm md:text-lg">ขยะเปียก</div>
+                <div class="text-xs md:text-sm opacity-80">(เขียว)</div>
+            </div>
+            <div class="bin bg-yellow-500 hover:bg-yellow-600 transition-all duration-300 rounded-lg p-3 md:p-4 text-center text-white font-bold shadow-lg min-h-24 md:min-h-32 flex flex-col items-center justify-center" 
+                 data-type="recyclable">
+                <div class="text-2xl md:text-3xl mb-1 md:mb-2">♻️</div>
+                <div class="text-sm md:text-lg">ขยะรีไซเคิล</div>
+                <div class="text-xs md:text-sm opacity-80">(เหลือง)</div>
+            </div>
+            <div class="bin bg-red-500 hover:bg-red-600 transition-all duration-300 rounded-lg p-3 md:p-4 text-center text-white font-bold shadow-lg min-h-24 md:min-h-32 flex flex-col items-center justify-center" 
+                 data-type="hazardous">
+                <div class="text-2xl md:text-3xl mb-1 md:mb-2">⚠️</div>
+                <div class="text-sm md:text-lg">ขยะอันตราย</div>
+                <div class="text-xs md:text-sm opacity-80">(แดง)</div>
+            </div>
+        </div>
+
+        <!-- Trash Items -->
+        <div class="bg-white rounded-lg p-3 md:p-6 shadow-lg">
+            <h2 class="text-lg md:text-2xl font-bold text-gray-800 mb-3 md:mb-4 text-center">ลากขยะเหล่านี้ไปทิ้งให้ถูกถัง</h2>
+            <div id="trashArea" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 md:gap-4 min-h-32 md:min-h-40">
+                <!-- Trash items will be generated here -->
+            </div>
+            <div class="text-center mt-3 md:mt-4">
+                <button id="newGameBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 md:px-6 rounded-lg transition-colors text-sm md:text-base">
+                    เกมใหม่
+                </button>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="mt-4 md:mt-6 bg-white rounded-lg p-3 md:p-4 shadow">
+            <h3 class="font-bold text-base md:text-lg mb-2">วิธีเล่น:</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4 text-xs md:text-sm">
+                <div>
+                    <span class="font-semibold text-blue-600">🗑️ ขยะทั่วไป (ฟ้า):</span> ถุงพลาสติก, กระดาษทิชชู่, ขยะที่ไม่สามารถรีไซเคิลได้
+                </div>
+                <div>
+                    <span class="font-semibold text-green-600">🥬 ขยะเปียก (เขียว):</span> เศษอาหาร, ผลไม้, ใบไม้
+                </div>
+                <div>
+                    <span class="font-semibold text-yellow-600">♻️ ขยะรีไซเคิล (เหลือง):</span> ขวดแก้ว, กระป๋อง, กระดาษ
+                </div>
+                <div>
+                    <span class="font-semibold text-red-600">⚠️ ขยะอันตราย (แดง):</span> ถ่านไฟฉาย, หลอดไฟ, ยา
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const trashItems = [
+            // ขยะทั่วไป (general)
+            { emoji: '🛍️', name: 'ถุงพลาสติก', type: 'general' },
+            { emoji: '🧻', name: 'กระดาษทิชชู่', type: 'general' },
+            { emoji: '🍿', name: 'ถุงป๊อปคอร์น', type: 'general' },
+            { emoji: '🎈', name: 'ลูกโป่ง', type: 'general' },
+            { emoji: '🧽', name: 'ฟองน้ำ', type: 'general' },
+            { emoji: '🪒', name: 'ใบมีดโกน', type: 'general' },
+            { emoji: '🎭', name: 'หน้ากากพลาสติก', type: 'general' },
+            { emoji: '🧸', name: 'ตุ๊กตาเก่า', type: 'general' },
+            { emoji: '👟', name: 'รองเท้าเก่า', type: 'general' },
+            { emoji: '🎪', name: 'ผ้าใบเก่า', type: 'general' },
+            { emoji: '🧤', name: 'ถุงมือยาง', type: 'general' },
+            { emoji: '🎯', name: 'ของเล่นพลาสติก', type: 'general' },
+            
+            // ขยะเปียก (organic)
+            { emoji: '🍌', name: 'เปลือกกล้วย', type: 'organic' },
+            { emoji: '🍎', name: 'แกนแอปเปิ้ล', type: 'organic' },
+            { emoji: '🥕', name: 'เศษผัก', type: 'organic' },
+            { emoji: '🍊', name: 'เปลือกส้ม', type: 'organic' },
+            { emoji: '🥬', name: 'ผักเก่า', type: 'organic' },
+            { emoji: '🍇', name: 'องุ่นเสีย', type: 'organic' },
+            { emoji: '🥒', name: 'แตงกวาเก่า', type: 'organic' },
+            { emoji: '🍅', name: 'มะเขือเทศเสีย', type: 'organic' },
+            { emoji: '🌽', name: 'ซังข้าวโพด', type: 'organic' },
+            { emoji: '🥔', name: 'มันฝรั่งเก่า', type: 'organic' },
+            { emoji: '🍄', name: 'เห็ดเก่า', type: 'organic' },
+            { emoji: '🥖', name: 'ขนมปังเก่า', type: 'organic' },
+            { emoji: '🍚', name: 'ข้าวเหลือ', type: 'organic' },
+            
+            // ขยะรีไซเคิล (recyclable)
+            { emoji: '🥤', name: 'ขวดน้ำ', type: 'recyclable' },
+            { emoji: '🗞️', name: 'หนังสือพิมพ์', type: 'recyclable' },
+            { emoji: '🥫', name: 'กระป๋องอาหาร', type: 'recyclable' },
+            { emoji: '📰', name: 'กระดาษ', type: 'recyclable' },
+            { emoji: '📦', name: 'กล่องกระดาษ', type: 'recyclable' },
+            { emoji: '🍺', name: 'ขวดแก้ว', type: 'recyclable' },
+            { emoji: '🥛', name: 'กล่องนม', type: 'recyclable' },
+            { emoji: '📄', name: 'เอกสารเก่า', type: 'recyclable' },
+            { emoji: '📚', name: 'หนังสือเก่า', type: 'recyclable' },
+            { emoji: '🗂️', name: 'แฟ้มเอกสาร', type: 'recyclable' },
+            { emoji: '📋', name: 'คลิปบอร์ด', type: 'recyclable' },
+            { emoji: '🎁', name: 'กล่องของขวัญ', type: 'recyclable' },
+            { emoji: '🧃', name: 'กล่องน้ำผลไม้', type: 'recyclable' },
+            
+            // ขยะอันตราย (hazardous)
+            { emoji: '🔋', name: 'ถ่านไฟฉาย', type: 'hazardous' },
+            { emoji: '💡', name: 'หลอดไฟ', type: 'hazardous' },
+            { emoji: '💊', name: 'ยาหมดอายุ', type: 'hazardous' },
+            { emoji: '🧪', name: 'สารเคมี', type: 'hazardous' },
+            { emoji: '🎨', name: 'สีเก่า', type: 'hazardous' },
+            { emoji: '🔧', name: 'น้ำมันเครื่อง', type: 'hazardous' },
+            { emoji: '🧴', name: 'ขวดยาฆ่าแมลง', type: 'hazardous' },
+            { emoji: '🌡️', name: 'เทอร์โมมิเตอร์', type: 'hazardous' },
+            { emoji: '💻', name: 'อุปกรณ์อิเล็กทรอนิกส์', type: 'hazardous' },
+            { emoji: '📱', name: 'มือถือเก่า', type: 'hazardous' },
+            { emoji: '🔌', name: 'สายไฟเก่า', type: 'hazardous' },
+            { emoji: '⚡', name: 'อะแดปเตอร์', type: 'hazardous' }
+        ];
+
+        let score = 0;
+        let mistakes = 0;
+        let stars = 0;
+        let currentTrash = [];
+        let timeLeft = 45;
+        let gameTimer = null;
+        let gameActive = false;
+
+        function shuffleArray(array) {
+            const newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        }
+
+        function startTimer() {
+            gameActive = true;
+            gameTimer = setInterval(() => {
+                timeLeft--;
+                document.getElementById('timer').textContent = timeLeft;
+                
+                if (timeLeft <= 0) {
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function endGame() {
+            gameActive = false;
+            clearInterval(gameTimer);
+            
+            // Calculate final stars
+            let finalStars = Math.floor(score / 50);
+            if (mistakes === 0 && score > 0) finalStars += 2;
+            else if (mistakes <= 2) finalStars += 1;
+            
+            showGameOverModal(score, mistakes, finalStars);
+            createFireworks();
+        }
+
+        function createStarEffect(x, y) {
+            const star = document.createElement('div');
+            star.className = 'star-effect';
+            star.innerHTML = '⭐';
+            star.style.left = x + 'px';
+            star.style.top = y + 'px';
+            star.style.fontSize = '2rem';
+            document.body.appendChild(star);
+            
+            setTimeout(() => {
+                star.remove();
+            }, 1000);
+        }
+
+        function createErrorEffect(x, y) {
+            const error = document.createElement('div');
+            error.className = 'error-effect';
+            error.innerHTML = '❌';
+            error.style.left = x + 'px';
+            error.style.top = y + 'px';
+            document.body.appendChild(error);
+            
+            setTimeout(() => {
+                error.remove();
+            }, 800);
+        }
+
+        function createFireworks() {
+            const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7'];
+            
+            for (let i = 0; i < 5; i++) {
+                setTimeout(() => {
+                    const firework = document.createElement('div');
+                    firework.className = 'firework';
+                    firework.style.left = Math.random() * window.innerWidth + 'px';
+                    firework.style.top = Math.random() * window.innerHeight / 2 + 'px';
+                    
+                    for (let j = 0; j < 12; j++) {
+                        const particle = document.createElement('div');
+                        particle.className = 'firework-particle';
+                        particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                        
+                        const angle = (j * 30) * Math.PI / 180;
+                        const distance = 50 + Math.random() * 50;
+                        particle.style.left = Math.cos(angle) * distance + 'px';
+                        particle.style.top = Math.sin(angle) * distance + 'px';
+                        
+                        firework.appendChild(particle);
+                    }
+                    
+                    document.body.appendChild(firework);
+                    
+                    setTimeout(() => {
+                        firework.remove();
+                    }, 1000);
+                }, i * 200);
+            }
+        }
+
+        function showGameOverModal(finalScore, finalMistakes, finalStars) {
+            const modal = document.createElement('div');
+            modal.className = 'game-over-modal';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-8 text-center max-w-md mx-4">
+                    <h2 class="text-3xl font-bold mb-4 text-gray-800">🎉 เกมจบแล้ว!</h2>
+                    <div class="space-y-3 mb-6">
+                        <div class="text-xl">คะแนน: <span class="font-bold text-green-600">${finalScore}</span></div>
+                        <div class="text-xl">ความผิดพลาด: <span class="font-bold text-red-600">${finalMistakes}</span></div>
+                        <div class="text-xl">ดาวที่ได้: <span class="font-bold text-yellow-500">${finalStars} ⭐</span></div>
+                    </div>
+                    <button onclick="closeModal()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg">
+                        เล่นใหม่
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function closeModal() {
+            const modal = document.querySelector('.game-over-modal');
+            if (modal) modal.remove();
+            resetGame();
+        }
+
+        function generateTrash() {
+            const trashArea = document.getElementById('trashArea');
+            trashArea.innerHTML = '';
+            
+            // Select 8 random items from all 48 items
+            currentTrash = shuffleArray(trashItems).slice(0, 8);
+            
+            currentTrash.forEach((item, index) => {
+                const trashElement = document.createElement('div');
+                trashElement.className = 'trash-item bg-gray-100 hover:bg-gray-200 rounded-lg p-2 md:p-4 text-center cursor-move transition-all duration-200 border-2 border-gray-300';
+                trashElement.draggable = true;
+                trashElement.dataset.type = item.type;
+                trashElement.dataset.index = index;
+                trashElement.innerHTML = `
+                    <div class="text-2xl md:text-3xl mb-1 md:mb-2">${item.emoji}</div>
+                    <div class="text-xs md:text-sm font-medium text-gray-700">${item.name}</div>
+                `;
+                
+                // Drag events
+                trashElement.addEventListener('dragstart', handleDragStart);
+                trashElement.addEventListener('dragend', handleDragEnd);
+                
+                // Touch events for mobile
+                trashElement.addEventListener('touchstart', handleTouchStart, { passive: false });
+                trashElement.addEventListener('touchmove', handleTouchMove, { passive: false });
+                trashElement.addEventListener('touchend', handleTouchEnd, { passive: false });
+                
+                trashArea.appendChild(trashElement);
+            });
+            
+            // Start timer if not already started
+            if (!gameActive) {
+                startTimer();
+            }
+        }
+
+        function resetGame() {
+            score = 0;
+            mistakes = 0;
+            stars = 0;
+            timeLeft = 45;
+            gameActive = false;
+            clearInterval(gameTimer);
+            
+            document.getElementById('score').textContent = score;
+            document.getElementById('mistakes').textContent = mistakes;
+            document.getElementById('stars').textContent = stars;
+            document.getElementById('timer').textContent = timeLeft;
+            
+            generateTrash();
+        }
+
+        function handleDragStart(e) {
+            e.dataTransfer.setData('text/plain', e.target.dataset.type);
+            e.dataTransfer.setData('index', e.target.dataset.index);
+            e.target.classList.add('dragging');
+        }
+
+        function handleDragEnd(e) {
+            e.target.classList.remove('dragging');
+            document.querySelectorAll('.bin').forEach(bin => {
+                bin.classList.remove('bin-highlight');
+            });
+        }
+
+        // Touch handling for mobile devices
+        let touchItem = null;
+        let touchOffset = { x: 0, y: 0 };
+
+        function handleTouchStart(e) {
+            e.preventDefault();
+            touchItem = e.target.closest('.trash-item');
+            if (touchItem) {
+                touchItem.classList.add('touching');
+                const touch = e.touches[0];
+                const rect = touchItem.getBoundingClientRect();
+                touchOffset.x = touch.clientX - rect.left;
+                touchOffset.y = touch.clientY - rect.top;
+            }
+        }
+
+        function handleTouchMove(e) {
+            e.preventDefault();
+            if (!touchItem) return;
+            
+            const touch = e.touches[0];
+            touchItem.style.position = 'fixed';
+            touchItem.style.left = (touch.clientX - touchOffset.x) + 'px';
+            touchItem.style.top = (touch.clientY - touchOffset.y) + 'px';
+            touchItem.style.zIndex = '1000';
+            
+            // Highlight bins when dragging over them
+            const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+            const bin = elementBelow?.closest('.bin');
+            
+            document.querySelectorAll('.bin').forEach(b => b.classList.remove('bin-highlight'));
+            if (bin) {
+                bin.classList.add('bin-highlight');
+            }
+        }
+
+        function handleTouchEnd(e) {
+            e.preventDefault();
+            if (!touchItem) return;
+            
+            const touch = e.changedTouches[0];
+            const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+            const bin = elementBelow?.closest('.bin');
+            
+            // Reset item position and style
+            touchItem.style.position = '';
+            touchItem.style.left = '';
+            touchItem.style.top = '';
+            touchItem.style.zIndex = '';
+            touchItem.classList.remove('touching');
+            
+            document.querySelectorAll('.bin').forEach(b => b.classList.remove('bin-highlight'));
+            
+            if (bin && gameActive) {
+                const trashType = touchItem.dataset.type;
+                const trashIndex = touchItem.dataset.index;
+                const binType = bin.dataset.type;
+                
+                const binRect = bin.getBoundingClientRect();
+                const centerX = binRect.left + binRect.width / 2;
+                const centerY = binRect.top + binRect.height / 2;
+                
+                if (trashType === binType) {
+                    // Correct!
+                    score += 10;
+                    stars = Math.floor(score / 50);
+                    document.getElementById('score').textContent = score;
+                    document.getElementById('stars').textContent = stars;
+                    
+                    bin.classList.add('correct-drop');
+                    touchItem.style.opacity = '0.3';
+                    touchItem.draggable = false;
+                    touchItem.style.pointerEvents = 'none';
+                    
+                    // Create star effect
+                    createStarEffect(centerX - 16, centerY - 16);
+                    
+                    setTimeout(() => {
+                        bin.classList.remove('correct-drop');
+                    }, 500);
+                    
+                    // Check if all trash is sorted
+                    const remainingTrash = document.querySelectorAll('.trash-item[draggable="true"]');
+                    if (remainingTrash.length === 0) {
+                        setTimeout(() => {
+                            generateTrash(); // Generate new trash automatically
+                        }, 1000);
+                    }
+                } else {
+                    // Wrong!
+                    mistakes++;
+                    document.getElementById('mistakes').textContent = mistakes;
+                    bin.classList.add('wrong-drop');
+                    
+                    // Create error effect
+                    createErrorEffect(centerX - 16, centerY - 16);
+                    
+                    setTimeout(() => {
+                        bin.classList.remove('wrong-drop');
+                    }, 500);
+                }
+            }
+            
+            touchItem = null;
+        }
+
+        // Setup bins
+        document.querySelectorAll('.bin').forEach(bin => {
+            bin.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (gameActive) {
+                    bin.classList.add('bin-highlight');
+                }
+            });
+            
+            bin.addEventListener('dragleave', (e) => {
+                bin.classList.remove('bin-highlight');
+            });
+            
+            bin.addEventListener('drop', (e) => {
+                e.preventDefault();
+                bin.classList.remove('bin-highlight');
+                
+                if (!gameActive) return;
+                
+                const trashType = e.dataTransfer.getData('text/plain');
+                const trashIndex = e.dataTransfer.getData('index');
+                const binType = bin.dataset.type;
+                
+                const trashElement = document.querySelector(`[data-index="${trashIndex}"]`);
+                const binRect = bin.getBoundingClientRect();
+                const centerX = binRect.left + binRect.width / 2;
+                const centerY = binRect.top + binRect.height / 2;
+                
+                if (trashType === binType) {
+                    // Correct!
+                    score += 10;
+                    stars = Math.floor(score / 50);
+                    document.getElementById('score').textContent = score;
+                    document.getElementById('stars').textContent = stars;
+                    
+                    bin.classList.add('correct-drop');
+                    trashElement.style.opacity = '0.3';
+                    trashElement.draggable = false;
+                    trashElement.style.pointerEvents = 'none';
+                    
+                    // Create star effect
+                    createStarEffect(centerX - 16, centerY - 16);
+                    
+                    setTimeout(() => {
+                        bin.classList.remove('correct-drop');
+                    }, 500);
+                    
+                    // Check if all trash is sorted
+                    const remainingTrash = document.querySelectorAll('.trash-item[draggable="true"]');
+                    if (remainingTrash.length === 0) {
+                        setTimeout(() => {
+                            generateTrash(); // Generate new trash automatically
+                        }, 1000);
+                    }
+                } else {
+                    // Wrong!
+                    mistakes++;
+                    document.getElementById('mistakes').textContent = mistakes;
+                    bin.classList.add('wrong-drop');
+                    
+                    // Create error effect
+                    createErrorEffect(centerX - 16, centerY - 16);
+                    
+                    setTimeout(() => {
+                        bin.classList.remove('wrong-drop');
+                    }, 500);
+                }
+            });
+        });
+
+        // New game button
+        document.getElementById('newGameBtn').addEventListener('click', () => {
+            resetGame();
+        });
+
+        // Initialize game
+        generateTrash();
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97a807cf47c47336',t:'MTc1NzA5OTQ2Ni4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
